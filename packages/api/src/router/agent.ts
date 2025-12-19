@@ -1,15 +1,15 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { AgentExecutor, createToolCallingAgent } from "langchain/agents";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { createAgent } from "langchain";
 import { z } from "zod/v4";
 
 import { desc } from "@acme/db";
 import { Message } from "@acme/db/schema";
-import { createPostTools, createUserTools } from "@acme/tools";
 
-import { publicProcedure } from "../trpc";
-import { appRouter } from "../root";
+import { createPostTools, createUserTools } from "../tools";
+import { createTRPCRouter, publicProcedure } from "../trpc";
+import { postRouter } from "./post";
+import { userRouter } from "./user";
 
 /**
  * System prompt for the AI agent
@@ -47,45 +47,7 @@ export const agentRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // 1. Initialize the LLM
-      const model = new ChatGoogleGenerativeAI({
-        modelName: "gemini-2.0-flash-exp",
-        apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-        temperature: 0.7,
-      });
-
-      // 2. Create tRPC caller for tools
-      const caller = appRouter.createCaller(ctx);
-
-      // 3. Initialize tools
-      const tools = [
-        ...createUserTools(caller),
-        ...createPostTools(caller),
-      ];
-
-      // 4. Create agent prompt template
-      const prompt = ChatPromptTemplate.fromMessages([
-        ["system", AGENT_SYSTEM_PROMPT],
-        ["placeholder", "{chat_history}"],
-        ["human", "{input}"],
-        ["placeholder", "{agent_scratchpad}"],
-      ]);
-
-      // 5. Create the agent
-      const agent = await createToolCallingAgent({
-        llm: model,
-        tools,
-        prompt,
-      });
-
-      // 6. Create agent executor
-      const executor = new AgentExecutor({
-        agent,
-        tools,
-        verbose: true, // Helpful for debugging and tutorial purposes
-      });
-
-      // 7. Save user message to database
+      // 1. Save user message to database
       const [userMessage] = await ctx.db
         .insert(Message)
         .values({
@@ -94,7 +56,7 @@ export const agentRouter = {
         })
         .returning();
 
-      // 8. Get conversation history (last 10 messages)
+      // 2. Get conversation history (last 10 messages)
       const history = await ctx.db
         .select()
         .from(Message)
@@ -102,43 +64,104 @@ export const agentRouter = {
         .limit(10);
 
       // Convert to chronological order
-      const messages = history.reverse();
+      const previousMessages = history.reverse();
 
-      // Format chat history for LangChain
-      const chatHistory = messages.map((msg) => {
-        if (msg.role === "user") {
-          return { type: "human" as const, content: msg.content };
-        } else {
-          return { type: "ai" as const, content: msg.content };
+      // 3. Build conversation messages for LangChain
+      const conversationMessages = [
+        ...previousMessages.map((msg) => ({
+          role: msg.role === "user" ? "user" : "assistant",
+          content: msg.content,
+        })),
+        {
+          role: "user" as const,
+          content: input.message,
+        },
+      ];
+
+      // 4. Create tRPC caller for tools
+      // Create a temporary router with just user and post to avoid circular dependency
+      const toolsRouter = createTRPCRouter({
+        user: userRouter,
+        post: postRouter,
+      });
+      const caller = toolsRouter.createCaller(ctx);
+
+      // 5. Initialize tools
+      const tools = [...createUserTools(caller), ...createPostTools(caller)];
+
+      // 6. Create LangChain agent
+      const agent = createAgent({
+        model: new ChatGoogleGenerativeAI({
+          apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+          model: "gemini-3-pro-preview",
+          temperature: 0.7,
+        }),
+        tools,
+        systemPrompt: AGENT_SYSTEM_PROMPT,
+      });
+
+      // 7. Invoke agent with conversation history
+      const result = await agent.invoke({
+        messages: conversationMessages,
+      });
+
+      // 8. Extract the AI response from result messages
+      const lastMessage = result.messages[result.messages.length - 1];
+      const aiResponse =
+        (typeof lastMessage?.content === "string"
+          ? lastMessage.content
+          : Array.isArray(lastMessage?.content)
+            ? lastMessage.content
+                .map((c: unknown) =>
+                  typeof c === "string"
+                    ? c
+                    : (c as { text?: string }).text || "",
+                )
+                .join("")
+            : "") || "";
+
+      // 9. Extract tool calls from result messages
+      const toolCalls: {
+        toolName: string;
+        input: Record<string, unknown>;
+        output: Record<string, unknown>;
+        timestamp: string;
+        success: boolean;
+      }[] = [];
+
+      // Parse tool calls from messages
+      for (const msg of result.messages) {
+        if ("tool_calls" in msg && Array.isArray(msg.tool_calls)) {
+          const msgToolCalls = msg.tool_calls as {
+            name?: string;
+            args?: unknown;
+          }[];
+          for (const toolCall of msgToolCalls) {
+            toolCalls.push({
+              toolName: toolCall.name || "unknown",
+              input: toolCall.args as Record<string, unknown>,
+              output: {}, // Tool output is in separate messages
+              timestamp: new Date().toISOString(),
+              success: true,
+            });
+          }
         }
-      });
-
-      // 9. Execute the agent
-      const result = await executor.invoke({
-        input: input.message,
-        chat_history: chatHistory,
-      });
+      }
 
       // 10. Save agent response to database
       const [assistantMessage] = await ctx.db
         .insert(Message)
         .values({
           role: "assistant",
-          content: result.output,
+          content: aiResponse,
         })
         .returning();
 
       return {
         userMessage,
         assistantMessage,
-        // Include intermediate steps for tool call visualization
-        intermediateSteps: result.intermediateSteps?.map((step) => ({
-          action: {
-            tool: step.action.tool,
-            toolInput: step.action.toolInput,
-          },
-          observation: step.observation,
-        })),
+        // Include tool calls for visualization in UI
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       };
     }),
 

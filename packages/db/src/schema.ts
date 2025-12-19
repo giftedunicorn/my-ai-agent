@@ -48,7 +48,10 @@ export const UpdateUserSchema = CreateUserSchema.partial();
 // Post table for blog platform
 export const Post = pgTable("post", (t) => ({
   id: t.integer().primaryKey().generatedAlwaysAsIdentity(),
-  userId: t.integer().notNull().references(() => User.id, { onDelete: "cascade" }),
+  userId: t
+    .integer()
+    .notNull()
+    .references(() => User.id, { onDelete: "cascade" }),
   title: t.varchar({ length: 500 }).notNull(),
   content: t.text().notNull(),
   published: t.boolean().default(false).notNull(),

@@ -20,9 +20,11 @@
   "dependencies": {
     "@acme/db": "workspace:*",
     "@acme/validators": "workspace:*",
-    "@ai-sdk/google": "^2.0.46",
+    "@langchain/core": "^1.1.5",
+    "@langchain/google-genai": "^2.1.0",
     "@trpc/server": "catalog:",
-    "ai": "^5.0.112",
+    "drizzle-orm": "^0.44.7",
+    "langchain": "^1.2.0",
     "superjson": "2.2.3",
     "zod": "catalog:"
   },
