@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@acme/api": "workspace:*",
-    "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
     "@acme/ui": "workspace:*",
     "@acme/validators": "workspace:*",
@@ -24,7 +23,6 @@
     "@trpc/client": "catalog:",
     "@trpc/server": "catalog:",
     "@trpc/tanstack-react-query": "catalog:",
-    "better-auth": "catalog:",
     "next": "^16.0.9",
     "react": "catalog:react19",
     "react-dom": "catalog:react19",
