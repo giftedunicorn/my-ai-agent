@@ -7,25 +7,22 @@ import type { RouterOutputs } from "@acme/api";
 
 import { useTRPC } from "~/trpc/react";
 
-type CharacterType = "default" | "luffy" | "ironman" | "goku";
-
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [character, setCharacter] = useState<CharacterType>("default");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
   // Fetch all messages
-  const { data: messages } = useQuery(trpc.chat.getMessages.queryOptions());
+  const { data: messages } = useQuery(trpc.agent.getMessages.queryOptions());
 
   // Send message mutation
   const sendMessage = useMutation(
-    trpc.chat.sendChat.mutationOptions({
+    trpc.agent.chat.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(trpc.chat.pathFilter());
+        await queryClient.invalidateQueries(trpc.agent.pathFilter());
         setInput("");
         setIsLoading(false);
       },
@@ -38,9 +35,9 @@ export default function ChatPage() {
 
   // Clear messages mutation
   const clearMessages = useMutation(
-    trpc.chat.clearMessages.mutationOptions({
+    trpc.agent.clearMessages.mutationOptions({
       onSuccess: async () => {
-        await queryClient.invalidateQueries(trpc.chat.pathFilter());
+        await queryClient.invalidateQueries(trpc.agent.pathFilter());
       },
     }),
   );
@@ -60,7 +57,7 @@ export default function ChatPage() {
     if (!input.trim() || isLoading) return;
 
     setIsLoading(true);
-    sendMessage.mutate({ content: input.trim(), character });
+    sendMessage.mutate({ message: input.trim() });
   };
 
   // Handle Enter key press (Shift+Enter for new line)
@@ -71,38 +68,14 @@ export default function ChatPage() {
     }
   };
 
-  const characterOptions = [
-    { value: "default", label: "Default Assistant", emoji: "🤖" },
-    { value: "luffy", label: "Luffy", emoji: "👒" },
-    { value: "ironman", label: "Iron Man", emoji: "🦾" },
-    { value: "goku", label: "Goku", emoji: "💪" },
-  ];
-
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       {/* Header */}
       <div className="border-b bg-white px-4 py-3 shadow-sm">
         <div className="mx-auto flex max-w-4xl items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-gray-800">
-              AI Chat Assistant
-            </h1>
-
-            {/* Character selector */}
-            <select
-              value={character}
-              onChange={(e) => setCharacter(e.target.value as CharacterType)}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              disabled={isLoading}
-            >
-              {characterOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.emoji} {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
+          <h1 className="text-xl font-bold text-gray-800">
+            AI Agent Demo - Blog Platform Manager
+          </h1>
           <button
             onClick={() => clearMessages.mutate()}
             className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-600"
@@ -120,14 +93,14 @@ export default function ChatPage() {
             <div className="py-12 text-center text-gray-500">
               <p className="text-lg">Start your first conversation!</p>
               <p className="mt-2 text-sm">
-                Choose a character and type a message below
+                Try: "create 3 mock users" or "how many users do we have?"
               </p>
             </div>
           )}
 
           {/* Message list */}
           {messages?.map(
-            (message: RouterOutputs["chat"]["getMessages"][number]) => (
+            (message: RouterOutputs["agent"]["getMessages"][number]) => (
               <div
                 key={message.id}
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
