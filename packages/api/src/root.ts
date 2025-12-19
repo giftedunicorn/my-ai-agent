@@ -1,10 +1,10 @@
-import { chatRouter } from "./router/chat";
+import { agentRouter } from "./router/agent";
 import { postRouter } from "./router/post";
 import { userRouter } from "./router/user";
 import { createTRPCRouter } from "./trpc";
 
 export const appRouter = createTRPCRouter({
-  chat: chatRouter,
+  agent: agentRouter,
   user: userRouter,
   post: postRouter,
 });
